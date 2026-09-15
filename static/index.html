@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel - Gujarat Police CCTV Intelligence</title>
+  <link rel="stylesheet" href="/leaflet/leaflet.css"/>
+  <script src="/leaflet/leaflet.js"></script>
+  <script src="/header.js"></script>
+  <style>
+    body{margin:0;font-family:Segoe UI,sans-serif;display:flex}
+    #map{height:100vh;flex:3;background:#dfe6ee}
+    #side{flex:1;min-width:280px;padding:12px;overflow:auto;background:#0f1420;color:#e8eef5}
+    #side h2{margin:6px 0;font-size:18px}
+    .alert{background:#3a0d0d;border-left:4px solid #ff3b3b;padding:8px;margin:8px 0;border-radius:4px;font-size:13px}
+    .plate{font-size:16px;font-weight:bold;color:#ff6b6b}
+    .muted{color:#8aa0b6;font-size:12px}
+    #searchBox{display:flex;gap:6px;margin:10px 0}
+    #searchBox input{flex:1;padding:6px 8px;border-radius:4px;border:1px solid #2a3446;background:#1a2233;color:#e8eef5}
+    #searchBox button{padding:6px 12px;border-radius:4px;border:none;background:#2b8cff;color:#fff;cursor:pointer}
+    #searchResults{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+    .result{background:#171e2c;border-radius:4px;overflow:hidden;font-size:11px;cursor:pointer}
+    .result img{width:100%;height:80px;object-fit:cover;display:block}
+    .result div{padding:4px 6px}
+    a.nav{text-decoration:none;color:#8aa0b6;font-size:13px;margin-right:12px}
+    .predict-pulse{width:18px;height:18px;border-radius:50%;background:rgba(255,176,32,0.5);border:2px solid #ffb020;animation:predictPulse 1.5s infinite}
+    @keyframes predictPulse{
+      0%{box-shadow:0 0 0 0 rgba(255,176,32,0.6)}
+      70%{box-shadow:0 0 0 16px rgba(255,176,32,0)}
+      100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}
+    }
+    #predictPanel{background:#241c0d;border-left:4px solid #ffb020;padding:8px;margin:10px 0;border-radius:4px;font-size:12px;display:none}
+    #predictPanel b{color:#ffb020}
+    #droneBox{margin:10px 0}
+    #droneBox button{padding:7px 10px;border-radius:4px;border:none;cursor:pointer;font-size:12px;margin-right:6px}
+    #dispatchBtn{background:#ffb020;color:#1a1200}
+    #recallBtn{background:#2a3446;color:#e8eef5}
+    #droneStatus{background:#0d2438;border-left:4px solid #2b8cff;padding:8px;margin-top:8px;border-radius:4px;font-size:12px;display:none}
+    .drone-icon{font-size:20px;line-height:1;filter:drop-shadow(0 0 3px #000)}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="side">
+    <div id="nav"></div>
+    <h2>Sentinel - Live Alerts</h2>
+    <div class="muted">Gujarat Police CCTV Intelligence</div>
+    <div id="searchBox">
+      <input id="searchInput" type="text" placeholder="Search video, e.g. 'red car' or 'person in white shirt'"/>
+      <button onclick="runSearch()">Search</button>
+    </div>
+    <div id="searchResults"></div>
+    <div id="predictPanel"></div>
+    <div id="droneBox">
+      <button id="dispatchBtn" onclick="dispatchDrone()" disabled>🚁 Dispatch Drone to Intercept</button>
+      <button id="recallBtn" onclick="recallDrone()">Recall Drone</button>
+      <div class="muted" style="margin-top:4px">Integration-ready via MAVLink / DJI SDK</div>
+      <div id="droneStatus"></div>
+    </div>
+    <div id="alerts"></div>
+  </div>
+  <script>
+    const map = L.map("map").setView([23.2156, 72.6369], 11);
+
+    // Basemap with offline fallback: OSM -> CartoDB -> plain graticule (no internet needed).
+    const tileSources = [
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+    ];
+    let tileErrors = 0, activeLayer = null;
+    function drawGraticule(){
+      const g = L.layerGroup();
+      for (let lat = 20; lat <= 26; lat += 0.5) {
+        L.polyline([[lat,68],[lat,76]], {color:"#c7d2de", weight:1}).addTo(g);
+      }
+      for (let lon = 68; lon <= 76; lon += 0.5) {
+        L.polyline([[20,lon],[26,lon]], {color:"#c7d2de", weight:1}).addTo(g);
+      }
+      g.addTo(map);
+      document.getElementById("map").style.background = "#dfe6ee";
+      const badge = document.createElement("div");
+      badge.textContent = "OFFLINE MODE - basemap tiles unavailable";
+      badge.style.cssText = "position:absolute;top:10px;left:50px;z-index:1000;background:#0f1420;color:#ffb020;padding:4px 10px;border-radius:4px;font-size:12px;font-family:Segoe UI,sans-serif";
+      document.getElementById("map").appendChild(badge);
+    }
+    function useTileSource(i){
+      if (activeLayer) map.removeLayer(activeLayer);
+      tileErrors = 0;
+      activeLayer = L.tileLayer(tileSources[i], {maxZoom:19});
+      activeLayer.on("tileerror", () => {
+        tileErrors++;
+        if (tileErrors > 6) {
+          if (i + 1 < tileSources.length) useTileSource(i + 1);
+          else { map.removeLayer(activeLayer); activeLayer = null; drawGraticule(); }
+        }
+      });
+      activeLayer.addTo(map);
+    }
+    useTileSource(0);
+
+    const markers = {};
+    fetch("/cameras").then(r=>r.json()).then(cams=>{
+      cams.forEach(c=>{
+        markers[c.id] = L.circleMarker([c.lat,c.lon], {radius:9,color:"#2b8cff",fillColor:"#2b8cff",fillOpacity:0.85}).addTo(map).bindPopup(c.name);
+      });
+    });
+    async function poll(){
+      const data = await (await fetch("/alerts")).json();
+      const box = document.getElementById("alerts");
+      box.innerHTML = "";
+      data.forEach(a=>{
+        const subject = a.matched_plate || a.matched_name;
+        const kind = a.matched_plate ? "VEHICLE" : "PERSON";
+        const d = document.createElement("div");
+        d.className = "alert";
+        d.innerHTML = `<div class="plate">${subject} <span class="muted">[${kind}]</span></div>${a.reason} (${a.source})<br><span class="muted">cam ${a.camera} - score ${a.score} - ${a.time}</span>`;
+        box.appendChild(d);
+      });
+      // Only re-highlight/re-fetch route+prediction when the latest alert actually
+      // changes - otherwise this would reopen the popup and hit /events + /predict
+      // every 2s even when nothing new happened.
+      const top = data[0];
+      const topKey = top ? (top.matched_plate || top.matched_name) + "|" + top.time : null;
+      if (topKey && topKey !== lastAlertKey) {
+        lastAlertKey = topKey;
+        if (markers[top.camera]) {
+          const subject = top.matched_plate || top.matched_name;
+          const m = markers[top.camera];
+          m.setStyle({color:"#ff3b3b", fillColor:"#ff3b3b"});
+          m.bindPopup("ALERT: "+subject+" ("+top.reason+")").openPopup();
+        }
+        await drawRoute(top.matched_plate || top.matched_name);
+      }
+    }
+
+    let routeLayer = null;
+    let currentRoutePts = [];
+    let currentSubject = null;
+    let lastAlertKey = null;
+    async function drawRoute(plate){
+      const events = await (await fetch("/events?plate=" + encodeURIComponent(plate) + "&limit=50")).json();
+      if (routeLayer) map.removeLayer(routeLayer);
+      routeLayer = L.layerGroup().addTo(map);
+      const pts = events.filter(e => e.lat != null && e.lon != null)
+                        .sort((a, b) => new Date(a.time) - new Date(b.time));
+      if (pts.length > 1) {
+        L.polyline(pts.map(e => [e.lat, e.lon]), {color:"#ff3b3b", weight:3, dashArray:"6,6"}).addTo(routeLayer);
+      }
+      pts.forEach((e, i) => {
+        const last = i === pts.length - 1;
+        L.circleMarker([e.lat, e.lon], {
+          radius: last ? 10 : 6,
+          color: "#ff3b3b",
+          fillColor: last ? "#ff3b3b" : "#ffb020",
+          fillOpacity: 0.9
+        }).addTo(routeLayer).bindTooltip(e.camera + " - " + new Date(e.time).toLocaleTimeString());
+      });
+      currentRoutePts = pts;
+      currentSubject = plate;
+      document.getElementById("dispatchBtn").disabled = pts.length === 0;
+      await drawPrediction(plate, pts);
+    }
+
+    let predictLayer = null;
+    let currentPrediction = null;
+    async function drawPrediction(plate, pts){
+      if (predictLayer) { map.removeLayer(predictLayer); predictLayer = null; }
+      const panel = document.getElementById("predictPanel");
+      currentPrediction = null;
+      if (!pts.length) { panel.style.display = "none"; return; }
+      const data = await (await fetch("/predict?plate=" + encodeURIComponent(plate))).json();
+      if (!data.predicted || !data.predicted.length) {
+        panel.style.display = "none";
+        return;
+      }
+      const top = data.predicted[0];
+      currentPrediction = top;
+      predictLayer = L.layerGroup().addTo(map);
+      const last = pts[pts.length - 1];
+      L.polyline([[last.lat, last.lon], [top.lat, top.lon]], {color:"#ffb020", weight:3, dashArray:"2,8"}).addTo(predictLayer);
+      L.marker([top.lat, top.lon], {
+        icon: L.divIcon({className:"", html:'<div class="predict-pulse"></div>', iconSize:[18,18], iconAnchor:[9,9]})
+      }).addTo(predictLayer).bindTooltip("Predicted next: " + top.name);
+      panel.style.display = "block";
+      panel.innerHTML = `Predicted next camera: <b>${top.name}</b><br>ETA ~${top.eta_min} min &middot; confidence ${(top.score*100).toFixed(0)}%`;
+    }
+
+    let droneLayer = null;
+    let droneAnimId = null;
+    function recallDrone(){
+      if (droneAnimId) { cancelAnimationFrame(droneAnimId); droneAnimId = null; }
+      if (droneLayer) { map.removeLayer(droneLayer); droneLayer = null; }
+      const status = document.getElementById("droneStatus");
+      status.style.display = "none";
+    }
+
+    async function dispatchDrone(){
+      if (!currentRoutePts.length) return;
+      recallDrone();
+      fetch("/dispatch", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({target: currentSubject}),
+      }).catch(() => {});
+
+      const waypoints = currentRoutePts.map(p => ({lat: p.lat, lon: p.lon, name: p.camera}));
+      if (currentPrediction) waypoints.push({lat: currentPrediction.lat, lon: currentPrediction.lon, name: currentPrediction.name});
+      if (waypoints.length < 2) waypoints.unshift(waypoints[0]);
+
+      droneLayer = L.layerGroup().addTo(map);
+      const droneIcon = L.divIcon({className:"", html:'<div class="drone-icon">\u{1F681}</div>', iconSize:[24,24], iconAnchor:[12,12]});
+      const droneMarker = L.marker([waypoints[0].lat, waypoints[0].lon], {icon: droneIcon}).addTo(droneLayer);
+      const trail = L.polyline([[waypoints[0].lat, waypoints[0].lon]], {color:"#2b8cff", weight:2, dashArray:"1,5"}).addTo(droneLayer);
+      const status = document.getElementById("droneStatus");
+      status.style.display = "block";
+
+      const MS_PER_LEG = 1800;
+      let leg = 0;
+
+      function animateLeg(){
+        if (leg >= waypoints.length - 1) {
+          status.innerHTML = `<b>DRONE AT INTERCEPTION POINT</b> - visual on target ${currentSubject}`;
+          droneAnimId = null;
+          return;
+        }
+        const from = waypoints[leg], to = waypoints[leg + 1];
+        const start = performance.now();
+        status.innerHTML = `DRONE EN ROUTE &rarr; ${currentSubject} &middot; next waypoint <b>${to.name}</b> &middot; ETA ${(MS_PER_LEG/1000).toFixed(0)}s`;
+
+        function step(now){
+          const t = Math.min(1, (now - start) / MS_PER_LEG);
+          const lat = from.lat + (to.lat - from.lat) * t;
+          const lon = from.lon + (to.lon - from.lon) * t;
+          droneMarker.setLatLng([lat, lon]);
+          trail.addLatLng([lat, lon]);
+          if (t < 1) {
+            droneAnimId = requestAnimationFrame(step);
+          } else {
+            leg++;
+            animateLeg();
+          }
+        }
+        droneAnimId = requestAnimationFrame(step);
+      }
+      animateLeg();
+    }
+
+    async function runSearch(){
+      const q = document.getElementById("searchInput").value.trim();
+      const box = document.getElementById("searchResults");
+      if(!q){ box.innerHTML = ""; return; }
+      box.innerHTML = "<div class='muted'>Searching...</div>";
+      const results = await (await fetch("/search?q=" + encodeURIComponent(q))).json();
+      box.innerHTML = "";
+      if(!results.length){ box.innerHTML = "<div class='muted'>No matches.</div>"; return; }
+      results.forEach(r => {
+        const card = document.createElement("div");
+        card.className = "result";
+        card.innerHTML = `<img src="${r.thumb}"/><div>${r.class} - ${(r.score*100).toFixed(0)}%<br>cam ${r.camera} - ${new Date(r.time).toLocaleTimeString()}</div>`;
+        card.onclick = () => { if(markers[r.camera]) { map.setView(markers[r.camera].getLatLng(), 14); markers[r.camera].openPopup(); } };
+        box.appendChild(card);
+      });
+    }
+    document.getElementById("searchInput").addEventListener("keydown", e => { if(e.key === "Enter") runSearch(); });
+
+    renderHeader("nav", "map");
+    setInterval(poll, 2000); poll();
+  </script>
+</body>
+</html>
+

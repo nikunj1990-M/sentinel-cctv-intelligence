@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel - Audit Log</title>
+  <style>
+    body{margin:0;font-family:Segoe UI,sans-serif;background:#0f1420;color:#e8eef5;padding:20px}
+    h1{font-size:20px;margin:0 0 4px}
+    .muted{color:#8aa0b6;font-size:12px;margin-bottom:16px}
+    a.nav{color:#2b8cff;text-decoration:none;font-size:13px;margin-right:14px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #232c3d;font-size:13px}
+    th{color:#8aa0b6;font-weight:600}
+    .denied{color:#ff6b6b;margin-top:20px}
+  </style>
+</head>
+<body>
+  <div id="nav"></div>
+  <h1>Sentinel - Audit Log</h1>
+  <div class="muted">Login/logout and administrative actions</div>
+  <div id="content"></div>
+  <script src="/header.js"></script>
+  <script>
+    async function loadAudit(){
+      const res = await fetch("/audit");
+      const content = document.getElementById("content");
+      if (res.status === 403) {
+        content.innerHTML = "<div class='denied'>Access denied - admin role required.</div>";
+        return;
+      }
+      const rows = await res.json();
+      let html = "<table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>";
+      rows.forEach(r => {
+        html += `<tr><td>${new Date(r.time).toLocaleString()}</td><td>${r.username}</td><td>${r.action}</td><td>${r.details || ""}</td></tr>`;
+      });
+      html += "</tbody></table>";
+      content.innerHTML = html;
+    }
+    renderHeader("nav", "audit");
+    loadAudit();
+  </script>
+</body>
+</html>

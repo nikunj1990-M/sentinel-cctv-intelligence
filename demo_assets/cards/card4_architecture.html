@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#0f1420;color:#e8eef5;
+    font-family:'Segoe UI',sans-serif;overflow:hidden}
+  .wrap{width:1024px;height:768px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;box-sizing:border-box}
+  h1{font-size:34px;color:#2b8cff;margin:0 0 28px 0;font-weight:700}
+  .flow{display:flex;align-items:center;gap:14px}
+  .box{background:#171e2c;border:1px solid #2a3446;border-radius:8px;padding:14px 12px;font-size:13px;
+    text-align:center;color:#c8d4e0;width:130px}
+  .box.edge{border-color:#ffb020;color:#ffb020}
+  .box.center{border-color:#2b8cff;color:#2b8cff}
+  .arrow{font-size:20px;color:#5a6b80}
+  .note{margin-top:26px;font-size:13px;color:#8aa0b6;max-width:560px;text-align:center}
+</style></head>
+<body>
+  <div class="wrap">
+    <h1>Edge-First Architecture</h1>
+    <div class="flow">
+      <div class="box">Existing<br/>Cameras</div>
+      <div class="arrow">&#8594;</div>
+      <div class="box edge">AI at the Edge<br/>(detect &amp; match)</div>
+      <div class="arrow">&#8594;</div>
+      <div class="box center">Central Platform<br/>VAHAN / eGujCop</div>
+      <div class="arrow">&#8594;</div>
+      <div class="box">Live Map<br/>&amp; Alerts</div>
+    </div>
+    <div class="note">Only alerts &amp; metadata travel to the centre &mdash; never full video &mdash; saving bandwidth at 80,000-camera scale.</div>
+  </div>
+</body></html>

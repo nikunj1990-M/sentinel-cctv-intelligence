@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+demo_assets/*.wav
+demo_assets/seg_teaser*.mp4
+demo_assets/anpr_raw.mp4
+demo_assets/anpr_raw2.mp4
+demo_assets/face_raw.mp4
+demo_assets/seg2_raw.mp4
+demo_assets/ffmpeg_out*.log
+demo_assets/ffmpeg_err*.log

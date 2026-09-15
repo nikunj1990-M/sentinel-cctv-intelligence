@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel - Camera Registry</title>
+  <script src="/header.js"></script>
+  <style>
+    body{margin:0;font-family:Segoe UI,sans-serif;background:#0f1420;color:#e8eef5;padding:20px}
+    h1{font-size:20px;margin:0 0 4px}
+    .muted{color:#8aa0b6;font-size:12px;margin-bottom:16px}
+    a.nav{color:#2b8cff;text-decoration:none;font-size:13px;margin-right:12px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #232c3d;font-size:13px}
+    th{color:#8aa0b6;font-weight:600}
+    .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+    .online{background:#2ecc71}
+    .offline{background:#ff3b3b}
+    #uploadBox{margin-top:24px;padding:14px;background:#171e2c;border-radius:6px;max-width:480px}
+    #uploadBox h3{margin:0 0 8px;font-size:14px}
+    #uploadBox input[type=file]{color:#e8eef5}
+    #uploadBox button{margin-left:8px;padding:6px 14px;border:none;border-radius:4px;background:#2b8cff;color:#fff;cursor:pointer}
+    #uploadMsg{margin-top:8px;font-size:12px;color:#8aa0b6}
+    code{background:#232c3d;padding:1px 5px;border-radius:3px}
+  </style>
+</head>
+<body>
+  <div id="nav"></div>
+  <h1>Sentinel - Camera Registry</h1>
+  <div class="muted">Health = actively sending frames to a detector (ANPR / CLIP indexer) in the last 20s</div>
+  <table>
+    <thead><tr><th>Status</th><th>ID</th><th>Name</th><th>Lat</th><th>Lon</th><th>RTSP URL</th><th>Last seen</th></tr></thead>
+    <tbody id="camRows"></tbody>
+  </table>
+
+  <div id="uploadBox" style="display:none">
+    <h3>Bulk add / update cameras via CSV</h3>
+    <div class="muted">Columns: <code>id,name,lat,lon,rtsp_url</code> (rtsp_url optional)</div>
+    <form id="uploadForm" style="margin-top:8px">
+      <input type="file" id="csvFile" accept=".csv" required/>
+      <button type="submit">Upload</button>
+    </form>
+    <div id="uploadMsg"></div>
+  </div>
+
+  <script>
+    async function loadCameras(){
+      const cams = await (await fetch("/cameras")).json();
+      const rows = document.getElementById("camRows");
+      rows.innerHTML = "";
+      cams.forEach(c => {
+        const tr = document.createElement("tr");
+        const lastSeen = c.last_seen ? new Date(c.last_seen).toLocaleTimeString() : "never";
+        tr.innerHTML = `<td><span class="dot ${c.status}"></span>${c.status}</td>
+          <td>${c.id}</td><td>${c.name}</td><td>${c.lat}</td><td>${c.lon}</td>
+          <td>${c.rtsp_url || ""}</td><td>${lastSeen}</td>`;
+        rows.appendChild(tr);
+      });
+    }
+
+    document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = document.getElementById("csvFile").files[0];
+      const msg = document.getElementById("uploadMsg");
+      if(!file){ return; }
+      const formData = new FormData();
+      formData.append("file", file);
+      msg.textContent = "Uploading...";
+      const res = await fetch("/cameras/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      msg.textContent = res.ok ? `Done: ${data.inserted_or_updated} camera(s) added/updated.` : "Upload failed.";
+      loadCameras();
+    });
+
+    setInterval(loadCameras, 3000); loadCameras();
+    renderHeader("nav", "cameras").then(user => {
+      if (user.role === "admin") document.getElementById("uploadBox").style.display = "block";
+    });
+  </script>
+</body>
+</html>

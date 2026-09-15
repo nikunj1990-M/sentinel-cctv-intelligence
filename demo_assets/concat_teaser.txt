@@ -1,0 +1,6 @@
+file 'seg_teaser1.mp4'
+file 'seg_teaser2.mp4'
+file 'seg_teaser3.mp4'
+file 'seg_teaser4.mp4'
+file 'seg_teaser5.mp4'
+file 'seg_teaser6.mp4'

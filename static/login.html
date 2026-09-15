@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sentinel - Sign In</title>
+  <style>
+    body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,sans-serif;background:#0f1420;color:#e8eef5}
+    .card{background:#171e2c;padding:32px;border-radius:8px;width:320px}
+    .card h1{font-size:20px;margin:0 0 4px}
+    .card .muted{color:#8aa0b6;font-size:12px;margin-bottom:20px}
+    label{display:block;font-size:12px;color:#8aa0b6;margin:12px 0 4px}
+    input{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:4px;border:1px solid #2a3446;background:#1a2233;color:#e8eef5}
+    button{width:100%;margin-top:20px;padding:10px;border:none;border-radius:4px;background:#2b8cff;color:#fff;font-size:14px;cursor:pointer}
+    #err{color:#ff6b6b;font-size:12px;margin-top:10px;min-height:16px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sentinel</h1>
+    <div class="muted">Gujarat Police CCTV Intelligence - Sign in</div>
+    <form id="loginForm">
+      <label>Username</label>
+      <input id="username" type="text" autocomplete="username" required/>
+      <label>Password</label>
+      <input id="password" type="password" autocomplete="current-password" required/>
+      <div id="err"></div>
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      const err = document.getElementById("err");
+      err.textContent = "";
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username, password}),
+      });
+      if (res.ok) {
+        window.location.href = "/";
+      } else {
+        err.textContent = "Invalid username or password.";
+      }
+    });
+  </script>
+</body>
+</html>
